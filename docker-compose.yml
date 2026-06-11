@@ -9,8 +9,8 @@ services:
       PORT: 3020
       HOSTNAME: 0.0.0.0
       DATA_ROOT: /app/data
-    ports:
-      - "3020:3020"
+    expose:
+      - "3020"
     volumes:
       - xiaoshuojia-data:/app/data
     restart: unless-stopped
@@ -27,5 +27,25 @@ services:
       - xiaoshuojia-data:/app/data
     restart: unless-stopped
 
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+
 volumes:
   xiaoshuojia-data:
+  caddy_data:
+  caddy_config:

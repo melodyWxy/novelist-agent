@@ -1,0 +1,22 @@
+# Reverse proxy for the xiaoshuojia Next.js web service.
+#
+# Set SITE_ADDRESS in the project .env to your public domain
+# (e.g. example.com, www.example.com) — Caddy will automatically
+# provision and renew Let's Encrypt certificates. The container
+# must be reachable on ports 80 and 443 from the public internet.
+#
+# If SITE_ADDRESS is unset, Caddy falls back to plain HTTP on :80.
+
+{
+    admin off
+}
+
+{$SITE_ADDRESS::80} {
+    reverse_proxy web:3020 {
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-Host {host}
+        header_up X-Real-IP {remote_host}
+    }
+
+    encode gzip zstd
+}
