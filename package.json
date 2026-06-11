@@ -1,0 +1,62 @@
+{
+  "name": "xiaoshuojia",
+  "version": "0.2.0",
+  "description": "小说家 Agent - 多小说 AI 自动化章节产出工作台",
+  "type": "module",
+  "main": "dist/cli.js",
+  "bin": {
+    "xiaoshuojia": "./dist/cli.js"
+  },
+  "scripts": {
+    "dev": "tsx src/cli.ts",
+    "dev:web": "next dev -p 3020",
+    "dev:worker": "tsx scripts/worker.ts",
+    "dev:all": "concurrently -n web,worker -c blue,green \"npm run dev:web\" \"npm run dev:worker\"",
+    "build": "tsc -p tsconfig.src.json",
+    "build:web": "next build",
+    "start:web": "next start",
+    "start:worker": "node dist/worker.js",
+    "typecheck": "tsc --noEmit -p tsconfig.src.json && tsc --noEmit -p tsconfig.json",
+    "start": "node dist/cli.js",
+    "dry-run": "(tsx src/cli.ts --dry-run init-novel --id test-xiaoshuo --title 测试小说 --genre 玄幻 --protagonist 林凡 --style 热血爽文 || true) && tsx src/cli.ts --dry-run plan-outline --novel test-xiaoshuo --chapters 3 && tsx src/cli.ts --dry-run write-chapter --novel test-xiaoshuo --chapter 1",
+    "worker:dry-run": "tsx scripts/worker.ts --dry-run --once",
+    "narrative:dry-run": "tsx scripts/narrative-dry-run.ts",
+    "timeline-edit-test": "tsx scripts/timeline-edit-test.ts",
+    "universe-tick-test": "tsx scripts/universe-tick-dry-run.ts",
+    "support-tick-test": "tsx scripts/support-tick-dry-run.ts",
+    "narrative-cycle-test": "tsx scripts/narrative-cycle-dry-run.ts",
+    "narrative-cycle-retry-test": "tsx scripts/narrative-cycle-retry-test.ts",
+    "narrative-cycle-chain-test": "tsx scripts/narrative-cycle-chain-test.ts",
+    "retry-backoff-test": "tsx scripts/retry-backoff-test.ts",
+    "cycle-run-archive-test": "tsx scripts/cycle-run-archive-test.ts"
+  },
+  "keywords": [
+    "agent",
+    "novel",
+    "ai",
+    "llm",
+    "nextjs"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "commander": "^13.1.0",
+    "dotenv": "^16.4.7",
+    "next": "^15.3.3",
+    "node-cron": "^3.0.3",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "@types/node-cron": "^3.0.11",
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "concurrently": "^9.1.2",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  }
+}

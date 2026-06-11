@@ -1,0 +1,31 @@
+services:
+  web:
+    build: .
+    command: npm run start:web
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: 3020
+      HOSTNAME: 0.0.0.0
+      DATA_ROOT: /app/data
+    ports:
+      - "3020:3020"
+    volumes:
+      - xiaoshuojia-data:/app/data
+    restart: unless-stopped
+
+  worker:
+    build: .
+    command: npm run start:worker
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      DATA_ROOT: /app/data
+    volumes:
+      - xiaoshuojia-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  xiaoshuojia-data:
