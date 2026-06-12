@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { listNovelSummaries } from '@core/services/novel-service';
 import { listJobs } from '@core/jobs/queue';
 import { formatDateTime } from '@/lib/format-datetime';
+import { NovelImportForm } from '@/components/NovelImportForm';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,6 +29,7 @@ export default async function HomePage() {
           启动方式：<code>npm run dev:all</code>（Web 固定{' '}
           <a href="http://localhost:3020">http://localhost:3020</a>，勿用 3000 — 常被其他进程占用）
         </p>
+        <NovelImportForm />
       </div>
 
       <h2>作品列表</h2>
@@ -48,6 +50,7 @@ export default async function HomePage() {
               <th>宇宙</th>
               <th>碰撞</th>
               <th>调度</th>
+              <th>操作</th>
             </tr>
           </thead>
           <tbody>
@@ -65,6 +68,11 @@ export default async function HomePage() {
                 <td>{n.hasUniverse ? '✓' : '—'}</td>
                 <td>{n.candidateCollisions > 0 ? n.candidateCollisions : '—'}</td>
                 <td>{statusBadge(n.scheduleEnabled)}</td>
+                <td>
+                  <a className="btn btn-secondary" href={`/api/novels/${n.id}/export`}>
+                    导出
+                  </a>
+                </td>
               </tr>
             ))}
           </tbody>
