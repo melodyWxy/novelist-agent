@@ -68,6 +68,8 @@ ${powerCtx}
 - updatedAt 必须是 ISO 时间字符串；不确定可用当前章节时间占位：${new Date().toISOString()}
 - 若本章没有明确突破，不要提高 currentRankId
 - 获得/失去/损坏物品必须写进 inventory.status
+- injuries 必须是字符串数组，如 ["左臂刀伤","灵力紊乱"]，每项是简短文字，不要写成 {description:...} 对象
+- notes 必须是字符串数组，如 ["刚掌握引气术"]，不要写成单个字符串或对象
 - 受伤、瓶颈、能力熟练度变化写进 injuries 或 notes
 - 主角使用新能力必须能追溯到本章正文或既有资产
 

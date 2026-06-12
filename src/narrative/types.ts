@@ -108,8 +108,8 @@ export const CharacterAssetSchema = z.object({
   attributes: z.record(z.string()).default({}),
   abilities: z.array(z.string()).default([]),
   inventory: z.array(CharacterItemSchema).default([]),
-  injuries: z.array(z.string()).default([]),
-  notes: z.array(z.string()).default([]),
+  injuries: z.preprocess(coerceLlmStringArrayFlexible, z.array(z.string()).default([])),
+  notes: z.preprocess(coerceLlmStringArrayFlexible, z.array(z.string()).default([])),
   updatedAt: z.preprocess(fallbackIsoDate, z.string().datetime()),
 });
 
@@ -479,6 +479,33 @@ function coerceLlmString(val: unknown): string {
 function coerceLlmStringArray(val: unknown): string[] {
   if (!Array.isArray(val)) return [];
   return val.map(coerceLlmString).filter((s) => s.length > 0);
+}
+
+/** LLM 常把 injuries/notes 写成对象数组或单个字符串，统一归一为 string[] */
+function coerceLlmStringArrayFlexible(val: unknown): string[] {
+  if (val == null) return [];
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    if (!trimmed) return [];
+    if (trimmed.includes('\n')) {
+      return trimmed
+        .split('\n')
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+    if (trimmed.includes('；')) {
+      return trimmed
+        .split('；')
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+    return [trimmed];
+  }
+  if (Array.isArray(val)) {
+    return val.map(coerceLlmString).filter((s) => s.length > 0);
+  }
+  const single = coerceLlmString(val);
+  return single ? [single] : [];
 }
 
 function coerceFactionRelationships(val: unknown): Record<string, string> {
