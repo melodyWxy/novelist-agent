@@ -20,6 +20,7 @@ import { buildHeroTimelinePrompt } from '../prompts/hero-planner.js';
 import { buildSupportTimelinePrompt } from '../prompts/support-planner.js';
 import { buildCollisionDesignerPrompt } from '../prompts/collision-designer.js';
 import { buildEpisodePlannerPrompt } from '../prompts/episode-planner.js';
+import { buildHeroEpisodePlannerPrompt } from '../prompts/hero-episode-planner.js';
 import { buildEpisodeWritePrompt } from '../prompts/episode-write.js';
 import { buildEpisodeSurfaceWritePrompt } from '../prompts/episode-surface-write.js';
 import { buildEpisodeShadowWeavePrompt } from '../prompts/episode-shadow-weave.js';
@@ -36,7 +37,9 @@ import {
   buildChapterMemoryEntry,
   buildCompactWritingContext,
   buildWorldOnboardingGuidance,
+  formatRecentChaptersForPlanner,
   getCurrentStoryArc,
+  isDuplicateEpisodeTitle,
 } from './memory.js';
 import { checkPowerConsistency } from './power-review.js';
 import {
@@ -85,6 +88,14 @@ import {
 } from './disclosure.js';
 import { mergeDiscoveredCollisions } from './timeline-editor.js';
 import { normalizeEventSortOrders, nextSortOrderOnDay } from './timeline-sort.js';
+import {
+  pickNextHeroEvent,
+  pickBestCollisionForHeroEvent,
+  findNearbyWorldEvents,
+  findNearbySupportEvents,
+  isPlaceholderHeroEvent,
+  markEpisodeHeroEventsUsed,
+} from './hero-selection.js';
 import { countChars } from '../lib/text.js';
 import type { ReviewResult } from '../novel/types.js';
 
@@ -573,13 +584,19 @@ export async function planEpisodeFromCollision(
   );
 
   const episodeNumber = await narrativeStore.getNextEpisodeNumber(novelId);
-  const normalized = normalizeEpisodePlan({
-    ...out,
-    episodeNumber,
-    collisionId,
-    status: 'confirmed' as const,
-    generatedAt: new Date().toISOString(),
-  });
+  const normalized = normalizeEpisodePlan(
+    {
+      ...out,
+      episodeNumber,
+      source: 'collision' as const,
+      collisionId,
+      heroEventIds: collision.heroEventIds,
+      supportEventIds: collision.supportEventIds ?? [],
+      status: 'confirmed' as const,
+      generatedAt: new Date().toISOString(),
+    },
+    { fallbackCollisionType: collision.collisionType }
+  );
   const episode: EpisodePlan = EpisodePlanSchema.parse(normalized);
 
   await narrativeStore.saveEpisode(novelId, episode);
@@ -591,6 +608,133 @@ export async function planEpisodeFromCollision(
     collisions: updatedCollisions,
     updatedAt: new Date().toISOString(),
   });
+
+  return episode;
+}
+
+/** 从主人公线选取下一行动节点规划章节；若附近有碰撞则作为增强插入 */
+export async function planEpisodeFromHeroTimeline(
+  llm: LlmClient,
+  novelId: string,
+  options?: {
+    heroEventId?: string;
+    autoDiscoverCollisions?: boolean;
+    maxCollisions?: number;
+  }
+): Promise<EpisodePlan> {
+  const meta = await novelStore.loadNovelMeta(novelId);
+  const bible = await narrativeStore.loadWorldBible(novelId);
+  const world = await narrativeStore.loadWorldTimeline(novelId);
+  const hero = await narrativeStore.loadHeroTimeline(novelId);
+  const support = await narrativeStore.loadSupportTimeline(novelId);
+  const powerSystem = await narrativeStore.loadPowerSystem(novelId);
+  const characterAssets = await narrativeStore.loadCharacterAssets(novelId);
+  const [storyArcs, memory, reviews, storyState] = await Promise.all([
+    narrativeStore.loadStoryArcs(novelId),
+    narrativeStore.loadChapterMemoryIndex(novelId),
+    novelStore.listReviews(novelId),
+    novelStore.loadStoryState(novelId),
+  ]);
+
+  if (!world || !hero) {
+    throw new Error('缺少世界线/主人公线数据');
+  }
+
+  let collisionsFile = await narrativeStore.loadCollisions(novelId);
+  if (options?.autoDiscoverCollisions !== false) {
+    const discovered = await discoverCollisions(llm, novelId, options?.maxCollisions ?? DEFAULT_COLLISIONS);
+    collisionsFile = { collisions: discovered, updatedAt: new Date().toISOString() };
+  }
+
+  const heroEvent = options?.heroEventId
+    ? hero.events.find((e) => e.id === options.heroEventId)
+    : pickNextHeroEvent(hero, { narrativeDay: world.currentDay });
+  if (!heroEvent) {
+    throw new Error('主人公线无待写章的行动节点，请先推进世界或补充主角事件');
+  }
+
+  const pacing = computePacingRecommendation(memory?.entries ?? [], reviews, storyState.lastChapterNumber);
+  const enhancementCollision = pickBestCollisionForHeroEvent(
+    collisionsFile?.collisions ?? [],
+    heroEvent,
+    (type) => collisionTypeBoost(type, pacing)
+  );
+
+  const nextChapter = storyState.lastChapterNumber + 1;
+  const arc = getCurrentStoryArc(storyArcs, nextChapter);
+  const worldOnboarding = buildWorldOnboardingGuidance(bible, nextChapter, arc);
+  const arcContext = arc
+    ? [`第${arc.volumeNumber}卷《${arc.name}》：${arc.phaseGoal}`, worldOnboarding].filter(Boolean).join('\n')
+    : undefined;
+
+  const nearbyWorldEvents = findNearbyWorldEvents(world, heroEvent);
+  const nearbySupportEvents = findNearbySupportEvents(support, heroEvent);
+  const supportNames = new Map((bible?.supportCharacters ?? []).map((c) => [c.id, c.name]));
+
+  const recentChaptersBlock = formatRecentChaptersForPlanner(memory?.entries ?? [], 5);
+
+  const out = await llm.chatJson(
+    buildHeroEpisodePlannerPrompt({
+      meta,
+      hero,
+      heroEvent,
+      world,
+      nearbyWorldEvents,
+      nearbySupportEvents,
+      supportNames,
+      enhancementCollision,
+      powerSystem,
+      characterAssets,
+      arcContext,
+      pacingNote: pacing.pacingNote,
+      recentChaptersBlock,
+    }),
+    EpisodePlanOutputSchema,
+    { ...UNIVERSE_LLM_OPTIONS, temperature: 0.68 }
+  );
+
+  const recentTitles = (memory?.entries ?? []).map((e) => e.title);
+  if (isDuplicateEpisodeTitle(out.title, recentTitles)) {
+    throw new Error(
+      `事件包标题「${out.title}」与近期章节重复，已拒绝落盘。主人公节点 [${heroEvent.id}] 可能未正确标记为已消费，请检查 hero-timeline 的 usedInChapter。`
+    );
+  }
+
+  const episodeNumber = await narrativeStore.getNextEpisodeNumber(novelId);
+  const normalized = normalizeEpisodePlan(
+    {
+      ...out,
+      episodeNumber,
+      source: enhancementCollision ? ('collision' as const) : ('hero' as const),
+      collisionId: enhancementCollision?.id,
+      heroEventIds: [heroEvent.id],
+      supportEventIds: enhancementCollision?.supportEventIds?.length
+        ? enhancementCollision.supportEventIds
+        : nearbySupportEvents.map((e) => e.id),
+      status: 'confirmed' as const,
+      generatedAt: new Date().toISOString(),
+    },
+    { fallbackCollisionType: enhancementCollision?.collisionType }
+  );
+  const episode: EpisodePlan = EpisodePlanSchema.parse(normalized);
+  await narrativeStore.saveEpisode(novelId, episode);
+
+  const heroIdx = hero.events.findIndex((e) => e.id === heroEvent.id);
+  if (heroIdx >= 0 && hero.events[heroIdx].status === 'planned') {
+    hero.events[heroIdx].status = 'active';
+    hero.updatedAt = new Date().toISOString();
+    await narrativeStore.saveHeroTimeline(novelId, hero);
+  }
+
+  if (enhancementCollision && collisionsFile) {
+    const updatedCollisions = collisionsFile.collisions.map((c) =>
+      c.id === enhancementCollision.id ? { ...c, status: 'accepted' as const, episodeNumber } : c
+    );
+    await narrativeStore.saveCollisions(novelId, {
+      collisions: updatedCollisions,
+      updatedAt: new Date().toISOString(),
+    });
+  }
 
   return episode;
 }
@@ -1024,112 +1168,126 @@ export async function writeEpisodeChapter(
   }
 
   wordCount = countChars(content);
-  await novelStore.saveChapter(novelId, chapterNumber, episode.title, content);
+  let chapterPersisted = false;
+  const reviewPersisted = review != null && !options?.skipReview;
 
   let newState: StoryState | undefined;
-  if (!options?.skipStateUpdate) {
-    const world = await narrativeStore.loadWorldTimeline(novelId);
-    const hero = await narrativeStore.loadHeroTimeline(novelId);
-    if (world && hero) {
-      const updateMessages = buildDualLineStateUpdatePrompt({
-        meta,
-        state,
-        episode,
-        world,
-        hero,
-        chapterNumber,
-        chapterContent: content,
-        powerSystem,
-        characterAssets: assetsBefore,
-      });
-      const update = await llm.chatJson(updateMessages, DualLineStateUpdateSchema, {
-        temperature: 0.3,
-        maxTokens: 32_768,
-      });
+  try {
+    await novelStore.saveChapter(novelId, chapterNumber, episode.title, content);
+    chapterPersisted = true;
 
-      await applyDualLineStateUpdate(novelId, update, chapterNumber, episode);
-
-      newState = {
-        ...update.storyState,
-        lastChapterNumber: chapterNumber,
-        updatedAt: new Date().toISOString(),
-      };
-      await novelStore.saveStoryState(novelId, newState);
-
-      const assetsAfter = await narrativeStore.loadCharacterAssets(novelId);
-      const postPowerCheck = checkPowerConsistency({
-        content,
-        episode,
-        powerSystem,
-        assetsBefore,
-        assetsAfter,
-        storyArcPowerCeilingRankId: currentArc?.powerCeilingRankId,
-      });
-      if (!postPowerCheck.ok && review) {
-        review = {
-          ...review,
-          powerConsistencyOk: false,
-          passed: false,
-          issues: [
-            ...review.issues,
-            ...postPowerCheck.issues.map((issue) => ({
-              category: 'power_consistency' as const,
-              severity: 'high' as const,
-              description: issue,
-              suggestion: '检查状态更新后的角色资产是否与正文一致',
-            })),
-          ],
-          summary: `${review.summary}（状态更新后战力校验）`,
-        };
-        await novelStore.saveReview(novelId, {
-          chapterNumber: review.chapterNumber,
-          passed: review.passed,
-          score: review.score,
-          issues: review.issues.map((i) => ({
-            category: DUAL_LINE_REVIEW_CATEGORY_MAP[i.category],
-            severity: i.severity,
-            description: `[${i.category}] ${i.description}`,
-            suggestion: i.suggestion,
-          })),
-          summary: review.summary,
-          reviewedAt: review.reviewedAt,
+    if (!options?.skipStateUpdate) {
+      const world = await narrativeStore.loadWorldTimeline(novelId);
+      const hero = await narrativeStore.loadHeroTimeline(novelId);
+      if (world && hero) {
+        const updateMessages = buildDualLineStateUpdatePrompt({
+          meta,
+          state,
+          episode,
+          world,
+          hero,
+          chapterNumber,
+          chapterContent: content,
+          powerSystem,
+          characterAssets: assetsBefore,
         });
-      }
+        const update = await llm.chatJson(updateMessages, DualLineStateUpdateSchema, {
+          temperature: 0.3,
+          maxTokens: 32_768,
+        });
 
-      if (storyArcs) {
-        await narrativeStore.saveStoryArcs(
+        await applyDualLineStateUpdate(novelId, update, chapterNumber, episode);
+
+        newState = {
+          ...update.storyState,
+          lastChapterNumber: chapterNumber,
+          updatedAt: new Date().toISOString(),
+        };
+        await novelStore.saveStoryState(novelId, newState);
+
+        const assetsAfter = await narrativeStore.loadCharacterAssets(novelId);
+        const postPowerCheck = checkPowerConsistency({
+          content,
+          episode,
+          powerSystem,
+          assetsBefore,
+          assetsAfter,
+          storyArcPowerCeilingRankId: currentArc?.powerCeilingRankId,
+        });
+        if (!postPowerCheck.ok && review) {
+          review = {
+            ...review,
+            powerConsistencyOk: false,
+            passed: false,
+            issues: [
+              ...review.issues,
+              ...postPowerCheck.issues.map((issue) => ({
+                category: 'power_consistency' as const,
+                severity: 'high' as const,
+                description: issue,
+                suggestion: '检查状态更新后的角色资产是否与正文一致',
+              })),
+            ],
+            summary: `${review.summary}（状态更新后战力校验）`,
+          };
+          await novelStore.saveReview(novelId, {
+            chapterNumber: review.chapterNumber,
+            passed: review.passed,
+            score: review.score,
+            issues: review.issues.map((i) => ({
+              category: DUAL_LINE_REVIEW_CATEGORY_MAP[i.category],
+              severity: i.severity,
+              description: `[${i.category}] ${i.description}`,
+              suggestion: i.suggestion,
+            })),
+            summary: review.summary,
+            reviewedAt: review.reviewedAt,
+          });
+        }
+
+        if (storyArcs) {
+          await narrativeStore.saveStoryArcs(
+            novelId,
+            advanceStoryArcs(storyArcs, chapterNumber)
+          );
+        }
+
+        await appendChapterMemory(
           novelId,
-          advanceStoryArcs(storyArcs, chapterNumber)
+          buildChapterMemoryEntry({
+            chapterNumber,
+            title: episode.title,
+            episode,
+            state: newState,
+            wordCount,
+            reviewScore: review?.score,
+            reviewPassed: review?.passed,
+          })
         );
       }
-
-      await appendChapterMemory(
-        novelId,
-        buildChapterMemoryEntry({
-          chapterNumber,
-          title: episode.title,
-          episode,
-          state: newState,
-          wordCount,
-          reviewScore: review?.score,
-          reviewPassed: review?.passed,
-        })
-      );
     }
-  }
 
-  const writtenEpisode: EpisodePlan = {
-    ...episode,
-    status: 'written',
-    chapterNumber,
-    writingDrafts: {
-      surfaceDraft: drafts.surfaceDraft,
-      wovenDraft: drafts.wovenDraft,
-      finalDraft: content,
-      savedAt: new Date().toISOString(),
-    },
-  };
-  await narrativeStore.saveEpisode(novelId, writtenEpisode);
+    const writtenEpisode: EpisodePlan = {
+      ...episode,
+      status: 'written',
+      chapterNumber,
+      writingDrafts: {
+        surfaceDraft: drafts.surfaceDraft,
+        wovenDraft: drafts.wovenDraft,
+        finalDraft: content,
+        savedAt: new Date().toISOString(),
+      },
+    };
+    await narrativeStore.saveEpisode(novelId, writtenEpisode);
+  } catch (err) {
+    if (chapterPersisted) {
+      await novelStore.deleteChapterFile(novelId, chapterNumber);
+    }
+    if (reviewPersisted) {
+      await novelStore.deleteReviewFile(novelId, chapterNumber);
+    }
+    throw err;
+  }
 
   return {
     chapterNumber,
@@ -1195,6 +1353,7 @@ async function applyDualLineStateUpdate(
     }
   }
   for (const ne of update.heroTimeline.newEvents) {
+    if (isPlaceholderHeroEvent(ne)) continue;
     hero.events.push({
       ...ne,
       knownWorldFacts: sanitizeHeroEventFacts(ne.knownWorldFacts, episode.heroGains),
@@ -1203,6 +1362,8 @@ async function applyDualLineStateUpdate(
       sortOrder: nextSortOrderOnDay(hero.events, ne.day),
     });
   }
+
+  markEpisodeHeroEventsUsed(hero, episode.heroEventIds, chapterNumber);
 
   applyHeroGainsToTimeline(hero, episode.heroGains, chapterNumber, episode.day);
 
@@ -1240,10 +1401,14 @@ export async function resumeEpisodeStateUpdate(
   const hero = await narrativeStore.loadHeroTimeline(novelId);
   const powerSystem = await narrativeStore.loadPowerSystem(novelId);
   const characterAssets = await narrativeStore.loadCharacterAssets(novelId);
+  const storyArcs = await narrativeStore.loadStoryArcs(novelId);
+  const savedReview = await novelStore.loadReview(novelId, chapterNumber);
 
   if (!episode) throw new Error(`事件包 #${episodeNumber} 不存在`);
   if (!chapterContent) throw new Error(`第 ${chapterNumber} 章正文不存在`);
   if (!world || !hero) throw new Error('叙事宇宙不完整，无法状态更新');
+
+  const wordCount = countChars(chapterContent);
 
   const updateMessages = buildDualLineStateUpdatePrompt({
     meta,
@@ -1270,10 +1435,31 @@ export async function resumeEpisodeStateUpdate(
   };
   await novelStore.saveStoryState(novelId, newState);
 
+  if (storyArcs) {
+    await narrativeStore.saveStoryArcs(novelId, advanceStoryArcs(storyArcs, chapterNumber));
+  }
+
+  await appendChapterMemory(
+    novelId,
+    buildChapterMemoryEntry({
+      chapterNumber,
+      title: episode.title,
+      episode,
+      state: newState,
+      wordCount,
+      reviewScore: savedReview?.score,
+      reviewPassed: savedReview?.passed,
+    })
+  );
+
   const writtenEpisode: EpisodePlan = {
     ...episode,
     status: 'written',
     chapterNumber,
+    writingDrafts: episode.writingDrafts ?? {
+      finalDraft: chapterContent,
+      savedAt: new Date().toISOString(),
+    },
   };
   await narrativeStore.saveEpisode(novelId, writtenEpisode);
 

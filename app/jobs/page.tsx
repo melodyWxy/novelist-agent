@@ -1,18 +1,22 @@
 import { JobRetryButton } from '@/components/JobRetryButton';
 import { formatDateTime } from '@/lib/format-datetime';
-import { listJobs } from '@core/jobs/queue';
+import { listJobsForDisplay } from '@core/jobs/queue';
 import { formatRetryWait, isJobDue } from '@core/jobs/retry-backoff';
 
 export const dynamic = 'force-dynamic';
 
 export default async function JobsPage() {
-  const jobs = await listJobs(100);
+  const { jobs, stats } = await listJobsForDisplay(80);
 
   return (
     <div>
       <h2>任务队列</h2>
       <p className="muted">
         任务由 worker 进程执行。运行 <code>npm run dev:worker</code>
+        {' · '}
+        进行中 {stats.pending + stats.running}（pending {stats.pending} / running{' '}
+        {stats.running}）· 失败 {stats.failed} · 已完成 {stats.completed}
+        （本页优先展示进行中与近期失败）
       </p>
       <table>
         <thead>

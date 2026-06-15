@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ChapterPreview } from '@/components/ChapterPreview';
 import { ChapterAssistant } from '@/components/ChapterAssistant';
+import { ChapterEditor } from '@/components/ChapterEditor';
 import { getChapterContent } from '@core/services/novel-service';
 import * as store from '@core/novel/store';
 
@@ -44,6 +45,13 @@ export default async function ChapterPage({
       <h2>
         第 {chapterNumber} 章 {chapter.title}
       </h2>
+
+      <ChapterEditor
+        novelId={novelId}
+        chapterNumber={chapterNumber}
+        initialTitle={chapter.title}
+        initialContent={chapter.content}
+      />
 
       <ChapterAssistant novelId={novelId} chapterNumber={chapterNumber} />
 

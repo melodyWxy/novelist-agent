@@ -104,8 +104,16 @@ export async function enqueueDiscoverCollisions(novelId: string, maxCollisions =
   });
 }
 
-export async function enqueuePlanEpisode(novelId: string, collisionId: string) {
-  return enqueueJob(novelId, 'plan-episode', { collisionId }, {
+export async function enqueuePlanEpisode(
+  novelId: string,
+  options?: {
+    collisionId?: string;
+    heroEventId?: string;
+    autoDiscoverCollisions?: boolean;
+    maxCollisions?: number;
+  }
+) {
+  return enqueueJob(novelId, 'plan-episode', options ?? {}, {
     maxAttempts: MAX_CYCLE_ATTEMPTS,
   });
 }

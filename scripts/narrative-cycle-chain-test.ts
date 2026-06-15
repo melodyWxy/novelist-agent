@@ -77,7 +77,10 @@ async function main() {
   }
   console.log('✓ 四阶段均完成并已归档');
   console.log(`  tick: ${run.stages.tick.status}`);
-  console.log(`  collision: ${run.stages.collision.status} · ${run.collisionTitle}`);
+  console.log(
+    `  collision: ${run.stages.collision.status}` +
+      (run.collisionTitle ? ` · ${run.collisionTitle}` : ' (主人公线，碰撞阶段已跳过)')
+  );
   console.log(`  plan: ${run.stages.plan.status} · #${run.episodeNumber}`);
   console.log(`  write: ${run.stages.write.status} · 第${run.chapterNumber}章`);
 

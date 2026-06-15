@@ -53,6 +53,51 @@ export async function listJobs(limit = 50): Promise<Job[]> {
     .slice(0, limit);
 }
 
+export interface JobQueueStats {
+  pending: number;
+  running: number;
+  failed: number;
+  completed: number;
+}
+
+/** 任务页展示：优先进行中与近期失败，避免被历史 completed 淹没 */
+export async function listJobsForDisplay(limit = 80): Promise<{
+  jobs: Job[];
+  stats: JobQueueStats;
+}> {
+  const jobs = await loadQueue();
+  const stats: JobQueueStats = { pending: 0, running: 0, failed: 0, completed: 0 };
+  for (const job of jobs) {
+    if (job.status === 'pending') stats.pending++;
+    else if (job.status === 'running') stats.running++;
+    else if (job.status === 'failed') stats.failed++;
+    else if (job.status === 'completed') stats.completed++;
+  }
+
+  const byNewest = (a: Job, b: Job) =>
+    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+
+  const active = jobs
+    .filter((j) => j.status === 'pending' || j.status === 'running')
+    .sort(byNewest);
+  const failedRecent = jobs.filter((j) => j.status === 'failed').sort(byNewest).slice(0, 40);
+  const completedRecent = jobs
+    .filter((j) => j.status === 'completed')
+    .sort(byNewest)
+    .slice(0, Math.max(0, limit - active.length - failedRecent.length));
+
+  const seen = new Set<string>();
+  const merged: Job[] = [];
+  for (const job of [...active, ...failedRecent, ...completedRecent]) {
+    if (seen.has(job.id)) continue;
+    seen.add(job.id);
+    merged.push(job);
+    if (merged.length >= limit) break;
+  }
+
+  return { jobs: merged, stats };
+}
+
 export async function listJobsForNovel(novelId: string, limit = 20): Promise<Job[]> {
   const jobs = await loadQueue();
   return jobs
@@ -223,6 +268,34 @@ export async function claimNextPendingJob(): Promise<Job | null> {
   next.startedAt = new Date().toISOString();
   await saveQueue(jobs);
   return next;
+}
+
+/**
+ * Worker 启动恢复：本地队列没有跨进程心跳，进程被杀时 running job 会永久残留。
+ *
+ * 启动时将遗留 running 任务放回 pending，保留 attempt / runAt / parentJobId，
+ * 避免一次重启被计为业务失败或额外消耗重试次数。
+ */
+export async function recoverRunningJobsOnStartup(): Promise<Job[]> {
+  const jobs = await loadQueue();
+  const recovered: Job[] = [];
+
+  for (const job of jobs) {
+    if (job.status !== 'running') continue;
+
+    job.status = 'pending';
+    job.error = undefined;
+    delete job.startedAt;
+    delete job.finishedAt;
+    delete job.resultSummary;
+    recovered.push(JobSchema.parse(job));
+  }
+
+  if (recovered.length > 0) {
+    await saveQueue(jobs);
+  }
+
+  return recovered;
 }
 
 export async function updateJob(jobId: string, patch: Partial<Job>): Promise<Job> {

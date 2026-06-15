@@ -149,12 +149,29 @@ export class NovelistAgentRuntime {
       .then((r) => r.output);
   }
 
-  /** 双线叙事：从碰撞生成章节事件包 */
+  /** 双线叙事：从碰撞生成章节事件包（兼容手动碰撞路径） */
   async planEpisode(novelId: string, collisionId: string): Promise<EpisodePlan> {
     await this.assertNovelExists(novelId);
     return this.steps
-      .runStep('plan episode', () =>
+      .runStep('plan episode from collision', () =>
         narrativePipeline.planEpisodeFromCollision(this.llm, novelId, collisionId)
+      )
+      .then((r) => r.output);
+  }
+
+  /** 双线叙事：从主人公线生成章节事件包（默认自动产出路径） */
+  async planEpisodeFromHero(
+    novelId: string,
+    options?: {
+      heroEventId?: string;
+      autoDiscoverCollisions?: boolean;
+      maxCollisions?: number;
+    }
+  ): Promise<EpisodePlan> {
+    await this.assertNovelExists(novelId);
+    return this.steps
+      .runStep('plan episode from hero', () =>
+        narrativePipeline.planEpisodeFromHeroTimeline(this.llm, novelId, options)
       )
       .then((r) => r.output);
   }

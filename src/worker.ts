@@ -6,6 +6,7 @@
  */
 import { bootstrapEnvSync } from './config.js';
 import { processOneJob } from './jobs/worker.js';
+import { recoverRunningJobsOnStartup } from './jobs/queue.js';
 import { runSchedulerTick } from './jobs/scheduler.js';
 
 bootstrapEnvSync();
@@ -22,6 +23,14 @@ async function loop(): Promise<void> {
 }
 
 console.log(`[worker] 启动 poll=${pollMs}ms`);
+
+const recovered = await recoverRunningJobsOnStartup();
+if (recovered.length > 0) {
+  console.log(
+    `[worker] 启动恢复 ${recovered.length} 个遗留 running 任务：` +
+      recovered.map((job) => `${job.id}(${job.type})`).join(', ')
+  );
+}
 
 setInterval(() => {
   loop().catch((err) => console.error('[worker] 循环错误:', err));

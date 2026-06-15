@@ -2,7 +2,7 @@ import type { CycleStageName, CycleStageStatus } from './types.js';
 
 export const CYCLE_STAGE_LABELS: Record<CycleStageName, string> = {
   tick: '推进世界',
-  collision: '选碰撞',
+  collision: '碰撞增强',
   plan: '生成事件包',
   write: '写章',
 };

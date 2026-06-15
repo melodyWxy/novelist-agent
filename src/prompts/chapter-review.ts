@@ -45,10 +45,14 @@ export function buildChapterReviewPrompt(ctx: ChapterReviewContext): ChatMessage
 5. logic - 情节逻辑是否合理
 6. conflict_readability - 冲突场景是否有清楚空间锚点、动作因果和主角目标
 7. payoff - 是否完成至少一个小爽点闭环：压迫/轻视 → 主角主动破局 → 明确收益
-8. narration_person - 旁白是否为第三人称叙事；若以“我/我们/咱”作为叙述主语讲述主角经历（人物对白除外）则不合格
-9. dialogue_paragraphs - 人物对话是否独立分段；换说话人是否换段，对话后的关键动作/反应是否清楚。不要因自然叙事段落较长而扣分${openingVolumeReviewNote}
+8. opening_hook - 前三段是否落到具体现场、具体麻烦或人物反差，而不是背景说明/抽象情绪
+9. fun_readability - 是否有反差、误会、规则漏洞、讨价还价、嘲讽、轻喜感或人物互动带来的阅读趣味
+10. narration_person - 旁白是否为第三人称叙事；若以“我/我们/咱”作为叙述主语讲述主角经历（人物对白除外）则不合格
+11. dialogue_paragraphs - 人物对话是否独立分段；换说话人是否换段，对话后的关键动作/反应是否清楚。不要因自然叙事段落较长而扣分${openingVolumeReviewNote}
 
 若冲突读起来云里雾里，或主角全程被动没有爽点收益，必须给 medium 以上问题。
+若章节像流水账、没有人物互动变化、没有趣味点，必须给 medium 以上 pacing/style 问题。
+若大量使用“暗流涌动/命运齿轮/事情并不简单/一切才刚刚开始”等空泛句替代具体结果，必须给 style 问题。
 若为第一人称旁白，必须 passed=false，score 不得高于 60。
 passed 标准：无 high severity 问题，且 score >= 70`,
     },

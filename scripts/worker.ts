@@ -9,6 +9,7 @@
  */
 import { bootstrapEnvSync } from '../src/config.js';
 import { processOneJob } from '../src/jobs/worker.js';
+import { recoverRunningJobsOnStartup } from '../src/jobs/queue.js';
 import { runSchedulerTick } from '../src/jobs/scheduler.js';
 import { toErrorMessage } from '../src/lib/errors.js';
 
@@ -44,6 +45,14 @@ async function loop(): Promise<void> {
 }
 
 console.log(`[worker] 启动 poll=${pollMs}ms dryRun=${dryRun} once=${once}`);
+
+const recovered = await recoverRunningJobsOnStartup();
+if (recovered.length > 0) {
+  console.log(
+    `[worker] 启动恢复 ${recovered.length} 个遗留 running 任务：` +
+      recovered.map((job) => `${job.id}(${job.type})`).join(', ')
+  );
+}
 
 if (once) {
   await ensureDryRunJob();

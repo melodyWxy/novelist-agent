@@ -300,16 +300,93 @@ export const SupportTimelineSchema = z.object({
 export type SupportTimeline = z.infer<typeof SupportTimelineSchema>;
 
 /** 碰撞类型 */
-export const CollisionTypeSchema = z.enum([
+export const COLLISION_TYPES = [
   'time',
   'location',
   'resource',
   'value',
   'information',
   'relationship',
-]);
+] as const;
+
+export const CollisionTypeSchema = z.enum(COLLISION_TYPES);
 
 export type CollisionType = z.infer<typeof CollisionTypeSchema>;
+
+/** Prompt 中约束 LLM 只能输出六种结构化碰撞类型 */
+export const COLLISION_TYPE_PROMPT_HINT = `collisionType 只能是以下六项之一（禁止自造 minor-friction、daily、faction 等标签）：
+time=时间/scheduling 冲突，location=地点/空间 冲突，resource=资源/物品 争夺，
+value=价值观/立场 冲突，information=信息差/情报 不对称，relationship=人际/关系 摩擦`;
+
+const COLLISION_TYPE_ALIASES: Record<string, CollisionType> = {
+  time: 'time',
+  timing: 'time',
+  schedule: 'time',
+  deadline: 'time',
+  temporal: 'time',
+  location: 'location',
+  place: 'location',
+  spatial: 'location',
+  territory: 'location',
+  venue: 'location',
+  resource: 'resource',
+  resources: 'resource',
+  item: 'resource',
+  material: 'resource',
+  supply: 'resource',
+  loot: 'resource',
+  treasure: 'resource',
+  value: 'value',
+  values: 'value',
+  moral: 'value',
+  ideology: 'value',
+  belief: 'value',
+  principle: 'value',
+  information: 'information',
+  info: 'information',
+  intel: 'information',
+  secret: 'information',
+  clue: 'information',
+  rumor: 'information',
+  knowledge: 'information',
+  relationship: 'relationship',
+  relationships: 'relationship',
+  social: 'relationship',
+  interpersonal: 'relationship',
+  person: 'relationship',
+  people: 'relationship',
+  faction: 'relationship',
+  factions: 'relationship',
+  friction: 'relationship',
+  'minor-friction': 'relationship',
+  minor_friction: 'relationship',
+  minor: 'relationship',
+  daily: 'relationship',
+  routine: 'relationship',
+  conflict: 'relationship',
+  personal: 'relationship',
+};
+
+/** 将 LLM 自造标签归一到六种碰撞类型 */
+export function coerceCollisionType(val: unknown, fallback: CollisionType = 'relationship'): CollisionType {
+  if (typeof val !== 'string') return fallback;
+  const key = val.trim().toLowerCase();
+  if (!key) return fallback;
+  if (COLLISION_TYPE_ALIASES[key]) return COLLISION_TYPE_ALIASES[key];
+  if ((COLLISION_TYPES as readonly string[]).includes(key)) return key as CollisionType;
+  if (key.includes('time') || key.includes('schedule')) return 'time';
+  if (key.includes('location') || key.includes('place') || key.includes('territory')) return 'location';
+  if (key.includes('resource') || key.includes('item') || key.includes('material')) return 'resource';
+  if (key.includes('value') || key.includes('moral') || key.includes('ideolog')) return 'value';
+  if (key.includes('information') || key.includes('secret') || key.includes('intel')) return 'information';
+  return fallback;
+}
+
+/** LLM 输出用的碰撞类型（容忍自造枚举） */
+export const CollisionTypeOutputSchema = z.preprocess(
+  (val) => coerceCollisionType(val),
+  CollisionTypeSchema
+);
 
 const RiskLevelSchema = z.enum(['low', 'medium', 'high']);
 
@@ -416,10 +493,17 @@ const SceneBeatOutputSchema = z.union([
   z.string().transform((beat) => ({ line: 'hero' as const, beat })),
 ]);
 
+export const EpisodeSourceSchema = z.enum(['hero', 'collision']);
+export type EpisodeSource = z.infer<typeof EpisodeSourceSchema>;
+
 /** 章节事件包 — 写作前的结构化中间层 */
 export const EpisodePlanSchema = z.object({
   episodeNumber: z.number().int().positive(),
-  collisionId: z.string(),
+  /** hero=主人公线驱动；collision=旧版碰撞驱动（兼容历史数据） */
+  source: EpisodeSourceSchema.default('collision'),
+  collisionId: z.string().optional(),
+  heroEventIds: z.array(z.string()).default([]),
+  supportEventIds: z.array(z.string()).default([]),
   title: z.string(),
   timeWindow: z.string(),
   day: z.number().int().nonnegative(),
@@ -519,6 +603,32 @@ function coerceFactionRelationships(val: unknown): Record<string, string> {
   return out;
 }
 
+/** LLM 常把角色 relationships 写成对象数组，归一为 Record<角色名, 关系描述> */
+export function coerceCharacterRelationships(val: unknown): Record<string, string> {
+  if (val == null) return {};
+  if (Array.isArray(val)) {
+    const out: Record<string, string> = {};
+    for (const item of val) {
+      if (typeof item === 'string') {
+        const [name, ...rest] = item.split(/[:：]/);
+        if (name?.trim() && rest.length > 0) out[name.trim()] = rest.join('：').trim();
+        continue;
+      }
+      if (!item || typeof item !== 'object') continue;
+      const obj = item as Record<string, unknown>;
+      const name = coerceLlmString(
+        obj.name ?? obj.target ?? obj.character ?? obj.with ?? obj.key ?? obj.person
+      );
+      const rel = coerceLlmString(
+        obj.relation ?? obj.relationship ?? obj.status ?? obj.value ?? obj.type ?? obj.label
+      );
+      if (name && rel) out[name] = rel;
+    }
+    return out;
+  }
+  return coerceFactionRelationships(val);
+}
+
 const WorldBibleFactionOutputSchema = FactionSchema.extend({
   relationships: z.preprocess(coerceFactionRelationships, z.record(z.string()).default({})),
 });
@@ -576,7 +686,9 @@ const CollisionOutputSchema = CollisionSchema.omit({
   id: true,
   status: true,
   episodeNumber: true,
+  collisionType: true,
 }).extend({
+  collisionType: CollisionTypeOutputSchema,
   disclosureRisk: RiskLevelOutputSchema.default('medium'),
   surfaceStrength: RiskLevelOutputSchema.default('medium'),
   causalTightness: RiskLevelOutputSchema.default('medium'),
@@ -595,7 +707,7 @@ export const EpisodePlanOutputSchema = z.object({
   location: z.string(),
   worldEventsInPlay: z.array(z.string()),
   heroIntent: z.string(),
-  collisionType: CollisionTypeSchema,
+  collisionType: CollisionTypeOutputSchema,
   surfaceConflict: z.string(),
   hiddenCausality: z.string(),
   sceneBeats: z.array(SceneBeatOutputSchema).min(7),
@@ -828,7 +940,10 @@ export const DualLineStateUpdateSchema = z.object({
         role: z.string().optional(),
         traits: z.preprocess(coerceLlmStringArray, z.array(z.string()).default([])),
         currentStatus: z.preprocess(coerceLlmString, z.string()),
-        relationships: z.record(z.string()).default({}),
+        relationships: z.preprocess(
+          coerceCharacterRelationships,
+          z.record(z.string()).default({})
+        ),
       })
     ),
     foreshadowing: z.preprocess(
@@ -988,6 +1103,7 @@ export type UniverseSimState = z.infer<typeof UniverseSimStateSchema>;
 export const CycleResumeSchema = z.object({
   skipTick: z.boolean(),
   collisionId: z.string().optional(),
+  heroEventId: z.string().optional(),
   episodeNumber: z.number().int().positive().optional(),
 });
 
@@ -1054,6 +1170,7 @@ export const CycleRunSchema = z.object({
     targetWords: z.number().int().positive().optional(),
     skipWrite: z.boolean().default(false),
     collisionId: z.string().optional(),
+    heroEventId: z.string().optional(),
     episodeNumber: z.number().int().positive().optional(),
   }),
   stages: z.object({
@@ -1063,6 +1180,8 @@ export const CycleRunSchema = z.object({
     write: CycleStageRecordSchema,
   }),
   tickToDay: z.number().int().nonnegative().optional(),
+  heroEventId: z.string().optional(),
+  heroEventTitle: z.string().optional(),
   collisionId: z.string().optional(),
   collisionTitle: z.string().optional(),
   episodeNumber: z.number().int().positive().optional(),

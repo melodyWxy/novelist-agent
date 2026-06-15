@@ -35,7 +35,14 @@ POV 规则（严格执行）：
 - newEvents 中 hero 的 knownWorldFacts 必须为空数组或 heroGains 的子集
 
 输出 JSON：{ worldTimeline: { currentDay, eventUpdates[], newEvents[] }, heroTimeline: { protagonistGoal, crisis, eventUpdates[], newEvents[] }, storyState: { timeline, lastChapterSummary, characters[], foreshadowing[], openThreads[] }, characterAssets: { characters[] } }
-eventUpdates 标记本章涉及的事件为 resolved 并填 usedInChapter。`,
+eventUpdates 标记本章涉及的事件为 resolved 并填 usedInChapter。
+storyState.characters[].relationships 必须是对象 {"角色名":"关系描述"}，禁止返回数组。
+
+storyState 摘要纪律（严格执行）：
+- lastChapterSummary：100～180 字，写「本章发生了什么大事、主角得失、下一步」，禁止堆砌朱砂/笔锋/巡视路径等微观观察清单
+- openThreads：最多保留 6 条未解主线；合并同类项；新增线程须关系晋升/势力/人物/任务/境界，不要为每个细微发现单开一条
+- characters[].traits：每人最多 5 个性格标签，禁止无限追加「某某已成习惯」式微技能堆叠
+- characters[].currentStatus：一句话现状，不要写成巡查日志`,
     },
     {
       role: 'user',

@@ -1,14 +1,19 @@
 /**
- * 单体叙事周期 — tick → 选碰撞 → 事件包 → 写章（单进程一次跑完）
+ * 单体叙事周期 — tick → 主人公线事件包 → 写章（单进程一次跑完）
  *
  * 生产环境请用 `cycle-chain.ts` 拆成多 job；本模块供 dry-run、smoke test、`narrative-cycle` job 使用。
- * 指定 `episodeNumber` / `collisionId` 时自动 `tickDays=0`，与周期链断点语义一致。
+ * 指定 `episodeNumber` / `collisionId` / `heroEventId` 时自动 `tickDays=0`，与周期链断点语义一致。
  */
 import { LlmClient } from '../llm/client.js';
 import { toErrorMessage } from '../lib/errors.js';
 import * as narrativeStore from './store.js';
 import { tickUniverse } from './world-simulator.js';
-import { discoverCollisions, planEpisodeFromCollision, writeEpisodeChapter } from './pipeline.js';
+import {
+  discoverCollisions,
+  planEpisodeFromCollision,
+  planEpisodeFromHeroTimeline,
+  writeEpisodeChapter,
+} from './pipeline.js';
 import { pickBestCollision } from './disclosure.js';
 import { recordCycleFailure, type CycleStage } from './cycle-retry.js';
 import type { Collision, EpisodePlan, NarrativeCycleLog, WriteEpisodeOptions } from './types.js';
@@ -18,8 +23,10 @@ export interface NarrativeCycleOptions {
   tickDays?: number;
   autoDiscoverCollisions?: boolean;
   maxCollisions?: number;
-  /** 指定碰撞；未指定则自动选最优候选 */
+  /** 指定碰撞；未指定则按主人公线自动选点（可附带碰撞增强） */
   collisionId?: string;
+  /** 指定主人公行动节点 */
+  heroEventId?: string;
   /** 断点续跑：已有事件包，跳过 plan 直接写章 */
   episodeNumber?: number;
   skipWrite?: boolean;
@@ -30,7 +37,8 @@ export interface NarrativeCycleOptions {
 export interface NarrativeCycleResult {
   ticked: boolean;
   tickToDay?: number;
-  collision: Collision;
+  heroEventId?: string;
+  collision?: Collision;
   episode: EpisodePlan;
   chapter?: {
     chapterNumber: number;
@@ -74,15 +82,26 @@ export async function pickCycleCollision(
 async function resolveEpisode(
   llm: LlmClient,
   novelId: string,
-  collision: Collision,
-  episodeNumber: number | undefined
+  options: Pick<
+    NarrativeCycleOptions,
+    'collisionId' | 'heroEventId' | 'episodeNumber' | 'autoDiscoverCollisions' | 'maxCollisions'
+  >
 ): Promise<EpisodePlan> {
-  if (episodeNumber) {
-    const existing = await narrativeStore.loadEpisode(novelId, episodeNumber);
-    if (!existing) throw new Error(`事件包 #${episodeNumber} 不存在`);
+  if (options.episodeNumber) {
+    const existing = await narrativeStore.loadEpisode(novelId, options.episodeNumber);
+    if (!existing) throw new Error(`事件包 #${options.episodeNumber} 不存在`);
     return existing;
   }
-  return planEpisodeFromCollision(llm, novelId, collision.id);
+
+  if (options.collisionId) {
+    return planEpisodeFromCollision(llm, novelId, options.collisionId);
+  }
+
+  return planEpisodeFromHeroTimeline(llm, novelId, {
+    heroEventId: options.heroEventId,
+    autoDiscoverCollisions: options.autoDiscoverCollisions !== false,
+    maxCollisions: options.maxCollisions ?? 6,
+  });
 }
 
 export async function runNarrativeCycle(
@@ -96,8 +115,7 @@ export async function runNarrativeCycle(
   const now = new Date().toISOString();
 
   let tickDays = options.tickDays ?? 1;
-  // 续跑：已有碰撞/事件包时不再推进世界
-  if (options.episodeNumber || options.collisionId) {
+  if (options.episodeNumber || options.collisionId || options.heroEventId) {
     tickDays = 0;
   }
 
@@ -119,17 +137,13 @@ export async function runNarrativeCycle(
       tickToDay = tickResult.toDay;
     }
 
-    stage = 'collision';
-    collision = await pickCycleCollision(
-      llm,
-      novelId,
-      options.collisionId,
-      autoDiscover,
-      maxCollisions
-    );
-
     stage = 'plan';
-    episode = await resolveEpisode(llm, novelId, collision, options.episodeNumber);
+    episode = await resolveEpisode(llm, novelId, options);
+
+    if (episode.collisionId) {
+      const file = await narrativeStore.loadCollisions(novelId);
+      collision = file?.collisions.find((c) => c.id === episode!.collisionId);
+    }
 
     let chapter: NarrativeCycleResult['chapter'];
     if (!skipWrite) {
@@ -151,8 +165,8 @@ export async function runNarrativeCycle(
       tickDays: ticked ? tickDays : 0,
       skippedTick: !ticked,
       skippedWrite: skipWrite,
-      collisionId: collision.id,
-      collisionTitle: collision.title,
+      collisionId: collision?.id,
+      collisionTitle: collision?.title,
       episodeNumber: episode.episodeNumber,
       chapterNumber: chapter?.chapterNumber,
       chapterTitle: chapter?.title,
@@ -167,7 +181,15 @@ export async function runNarrativeCycle(
     };
     await narrativeStore.saveNarrativeCycleLog(novelId, log);
 
-    return { ticked, tickToDay, collision, episode, chapter, log };
+    return {
+      ticked,
+      tickToDay,
+      heroEventId: episode.heroEventIds[0],
+      collision,
+      episode,
+      chapter,
+      log,
+    };
   } catch (error) {
     const message = toErrorMessage(error);
     await recordCycleFailure(novelId, {
@@ -176,6 +198,7 @@ export async function runNarrativeCycle(
       ticked,
       tickDays,
       collision,
+      heroEventId: episode?.heroEventIds[0] ?? options.heroEventId,
       episodeNumber: episode?.episodeNumber ?? options.episodeNumber,
     });
     throw error;

@@ -191,6 +191,15 @@ export async function loadEpisode(novelId: string, episodeNumber: number): Promi
   return data ? EpisodePlanSchema.parse(data) : null;
 }
 
+export async function deleteEpisode(novelId: string, episodeNumber: number): Promise<boolean> {
+  try {
+    await fs.unlink(episodeFilePath(novelId, episodeNumber));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function listEpisodeNumbers(novelId: string): Promise<number[]> {
   const dir = path.join(getNovelDir(novelId), 'episodes');
   try {

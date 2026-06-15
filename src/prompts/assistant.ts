@@ -15,7 +15,7 @@ const SCOPE_HINTS: Record<AssistantScope, string> = {
   power:
     '战力与资产：替换战力体系、角色资产、分卷大纲。用 power_system / character_assets / story_arcs 整文件写回（data 为完整 JSON 对象，保留既有 id 与时间戳字段）。',
   collisions:
-    '碰撞工坊：标记必须发生、拒绝碰撞。用 collision_patch；Agent 可 discover_collisions、plan_episode（需 collisionId）。',
+    '碰撞工坊：标记必须发生、拒绝碰撞。用 collision_patch；Agent 可 discover_collisions、plan_episode（默认按主人公线，可选 collisionId）。',
   episodes:
     '章节产出：修改事件包或触发写作。用 episode 写回（data 为完整 EpisodePlan，须含 episodeNumber）；Agent 可 plan_episode、write_episode、narrative_cycle。',
   chapter:
@@ -27,7 +27,7 @@ const ACTION_CATALOG = `
 - build_universe: { worldEventCount?, heroEventCount? }
 - discover_collisions: { maxCollisions? }
 - universe_tick: { tickDays?, autoDiscoverCollisions?, maxCollisions? }
-- plan_episode: { collisionId } 必填
+- plan_episode: { collisionId?, heroEventId? } 默认按主人公线选下一行动节点
 - write_episode: { episodeNumber, targetWords? } episodeNumber 必填
 - narrative_cycle: { tickDays?, autoDiscoverCollisions?, maxCollisions?, collisionId?, episodeNumber?, targetWords?, skipWrite? }
 - cycle_retry: {}
@@ -41,7 +41,7 @@ const ACTION_CATALOG = `
 - power_system: 完整 PowerSystemFile
 - character_assets: 完整 CharacterAssetsFile
 - story_arcs: 完整 StoryArcsFile
-- episode: 完整 EpisodePlan（collisionType 须为 time|location|resource|value|information|faction 之一；day 为 number）
+- episode: 完整 EpisodePlan（collisionType 须为 time|location|resource|value|information|relationship 之一；day 为 number）
 - chapter: { chapterNumber: number, title?: string, content: string }
 `.trim();
 

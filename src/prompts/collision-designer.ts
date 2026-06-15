@@ -8,6 +8,7 @@ import type {
   WorldBible,
   WorldTimeline,
 } from '../narrative/types.js';
+import { COLLISION_TYPE_PROMPT_HINT } from '../narrative/types.js';
 
 export function buildCollisionDesignerPrompt(
   meta: NovelMeta,
@@ -48,7 +49,7 @@ export function buildCollisionDesignerPrompt(
       content: `你是碰撞引擎设计师。扫描世界线、配角隐线与主人公线，发现能形成剧情的交叉点。
 世界线=势力级隐线，配角线=人物级隐线，主人公线=明线。优先推荐「明线冲突强、隐线可藏住」的碰撞。
 
-碰撞类型：time/location/resource/value/information/relationship。
+${COLLISION_TYPE_PROMPT_HINT}
 输出 JSON：{ collisions: [{
   title, collisionType, worldEventIds[], heroEventIds[], supportEventIds[]?, day, location,
   rationale, surfaceConflict, hiddenCausality,

@@ -4,7 +4,8 @@
  * 世界线 = 隐线（系统掌握，正文只暗示）
  * 主人公线 = 明线（POV 驱动叙事）
  */
-import type { WorldBible, Collision, EpisodePlan, HeroTimeline, SceneBeat } from './types.js';
+import type { WorldBible, Collision, EpisodePlan, HeroTimeline, SceneBeat, CollisionType } from './types.js';
+import { coerceCollisionType } from './types.js';
 
 const RANK = { low: 1, medium: 2, high: 3 } as const;
 
@@ -169,14 +170,23 @@ export function ensureShadowHints(episode: Omit<EpisodePlan, 'shadowHints'> & { 
   ];
 }
 
-/** 规范化事件包：节拍结构 + 暗示清单 */
-export function normalizeEpisodePlan<T extends Omit<EpisodePlan, 'sceneBeats' | 'shadowHints'> & {
+/** 规范化事件包：碰撞类型 + 节拍结构 + 暗示清单 */
+export function normalizeEpisodePlan<T extends Omit<EpisodePlan, 'sceneBeats' | 'shadowHints' | 'collisionType'> & {
+  collisionType: unknown;
   sceneBeats: unknown;
   shadowHints?: string[];
-}>(raw: T): Omit<T, 'sceneBeats' | 'shadowHints'> & { sceneBeats: SceneBeat[]; shadowHints: string[] } {
+}>(
+  raw: T,
+  options?: { fallbackCollisionType?: CollisionType }
+): Omit<T, 'sceneBeats' | 'shadowHints' | 'collisionType'> & {
+  collisionType: CollisionType;
+  sceneBeats: SceneBeat[];
+  shadowHints: string[];
+} {
+  const collisionType = coerceCollisionType(raw.collisionType, options?.fallbackCollisionType);
   const sceneBeats = normalizeSceneBeats(raw.sceneBeats);
-  const shadowHints = ensureShadowHints({ ...raw, sceneBeats });
-  return { ...raw, sceneBeats, shadowHints };
+  const shadowHints = ensureShadowHints({ ...raw, collisionType, sceneBeats });
+  return { ...raw, collisionType, sceneBeats, shadowHints };
 }
 
 /**

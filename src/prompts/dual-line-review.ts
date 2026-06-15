@@ -30,7 +30,7 @@ export function buildDualLineReviewPrompt(input: {
   } = input;
   const openingVolumeReviewNote =
     chapterNumber <= 30
-      ? `\n首卷/早期章节额外标准：本章应帮助读者更清楚理解小说世界。请检查是否通过主角见闻、交易、盘查、冲突、对话或失败代价，自然讲清至少一项世界模块：地理生活感、阶层制度、势力格局、能力/修行代价、资源链、主角所处位置。若只推进谜团而没有让读者更理解世界，应列为 readability 或 pacing 问题。`
+      ? `\n首卷/早期章节额外标准：本章应帮助读者更清楚理解小说世界。请检查是否通过任务、试炼、冲突、对话或失败代价自然讲清至少一项世界模块：地理生活感、阶层制度、势力格局、能力/修行代价、资源链、主角所处位置。若整章只是贡献点/公示阁办事查账而没有大格戏，或只推进谜团而没有让读者更理解世界，应列为 readability 或 pacing 问题。`
       : '';
 
   return [
@@ -41,17 +41,19 @@ export function buildDualLineReviewPrompt(input: {
 审稿优先级从高到低：
 1. readabilityOk：读者是否能清楚理解本章“主角目标 → 阻碍 → 主动选择 → 结果/收益”
 2. styleToneOk：是否符合明快、细腻、有趣、好读的网络小说读感，而不是故作玄虚、谜语化、设定堆砌
-3. conflictReadable：冲突场景是否有清楚空间锚点、动作因果和主角目标，读者不会云里雾里
-4. payoffSatisfying：是否有“小爽点闭环”（压迫/轻视 → 主角主动破局 → 明确收益）
-5. storyFlow：剧情是否顺滑，有开场钩子、推进、升级、收束/余波，不像碎片拼贴
-6. characterAgency：主角是否有主动判断和选择，不是全程被推着走
-7. proseQuality：句子是否清楚、有画面、有节奏，是否避免空泛词、重复比喻、过密专有名词
-8. emotionalClarity：人物情绪是否能从动作、对话、反应中读出来
-9. dialogueParagraphs：人物对话是否独立分段；重点看换说话人是否换段、对话后的关键动作/反应是否清楚，不按“短段落/移动端”强行扣分
-10. powerConsistencyOk：战力/阶位/能力/物品/伤势是否与角色资产和事件包一致；禁止无因跨阶、凭空神器、伤势遗忘
-11. heroKnowledgeOk：主角是否出现明显不该知道的信息；只在破坏阅读可信度时判严重
-12. hiddenLineLeak：只作为“悬念管理/剧透控制”参考项，不是核心审稿目标；适度揭示隐线可以接受，不能为了藏隐线牺牲可读性
-13. worldCausalityOk / collisionNatural / stateChanged：检查因果、碰撞和状态推进是否服务章节阅读体验
+3. openingHook：前三段是否直接落到具体现场、具体麻烦或人物反差，而不是宏大说明/抽象情绪
+4. conflictReadable：冲突场景是否有清楚空间锚点、动作因果和主角目标，读者不会云里雾里
+5. payoffSatisfying：是否有“小爽点闭环”（压迫/轻视 → 主角主动破局 → 明确收益 → 现场可见反馈）
+6. storyFlow：剧情是否顺滑，有开场钩子、推进、升级、收束/余波，不像碎片拼贴或流水账
+7. characterAgency：主角是否有主动判断和选择，不是全程被推着走
+8. funReadable：是否至少有一处反差、误会、规则漏洞、讨价还价、嘲讽、轻喜感或人物互动带来的阅读趣味
+9. proseQuality：句子是否清楚、有画面、有节奏，是否避免空泛词、重复比喻、过密专有名词
+10. emotionalClarity：人物情绪是否能从动作、对话、反应中读出来
+11. dialogueParagraphs：人物对话是否独立分段；重点看换说话人是否换段、对话后的关键动作/反应是否清楚，不按“短段落/移动端”强行扣分
+12. powerConsistencyOk：战力/阶位/能力/物品/伤势是否与角色资产和事件包一致；禁止无因跨阶、凭空神器、伤势遗忘
+13. heroKnowledgeOk：主角是否出现明显不该知道的信息；只在破坏阅读可信度时判严重
+14. hiddenLineLeak：只作为“悬念管理/剧透控制”参考项，不是核心审稿目标；适度揭示隐线可以接受，不能为了藏隐线牺牲可读性
+15. worldCausalityOk / collisionNatural / stateChanged：检查因果、碰撞和状态推进是否服务章节阅读体验
 ${openingVolumeReviewNote}
 
 输出 JSON：{
@@ -69,9 +71,13 @@ ${openingVolumeReviewNote}
 硬性判低：
 - 若读者读完无法复述本章目标、阻碍、选择、收益，readabilityOk=false，passed=false，score 不得高于 60
 - 若文风含混、设定堆叠、缺少生活气和具体动作，styleToneOk=false，score 不得高于 68
+- 若前三段没有具体现场/具体麻烦/人物反差，只有背景说明或抽象情绪，应列为 pacing 或 style 问题，score 不得高于 75
+- 若整章像事件流水账：只有“到了、看见、解释、继续”而没有阻碍变化、人物互动或策略变化，score 不得高于 70
+- 若没有任何趣味点（反差、误会、规则漏洞、讨价还价、嘲讽、轻喜感、人物小动作任选其一），funReadable 不合格，score 不得高于 76
 - 若冲突主要靠“混战、气浪、剑光、符箓”等词堆叠，缺少谁做了什么、为什么做、结果如何，应列为 pacing 或 logic 问题
 - 若主角全程被动挨打/目击，没有主动判断带来的收益，应列为 pacing 或 character 问题
 - 若正文大量使用“某种力量/那个人/不可言说/仿佛有什么/命运齿轮”等含混神秘词替代清楚因果，应列为 style 问题
+- 若段尾反复用“事情并不简单/一切才刚刚开始/暗流涌动/他心中一沉”等空泛句收束，而没有具体动作、物件变化或下一步决定，应列为 style 问题
 - 若只是自然叙事段落较长，不要扣分；只有人物对话挤在同一段导致说话人不清楚，才列为 style 或 readability 问题
 - 若为第一人称旁白，必须 passed=false，score 不得高于 60
 - powerConsistencyOk=false 且严重破坏剧情可信度时 passed=false

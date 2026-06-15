@@ -22,9 +22,14 @@ export async function POST(
 ) {
   try {
     const { novelId } = await params;
-    const body = (await request.json()) as { collisionId?: string };
-    if (!body.collisionId) return jsonError('需要 collisionId');
-    const job = await enqueuePlanEpisode(novelId, body.collisionId);
+    const body = (await request.json()) as {
+      collisionId?: string;
+      heroEventId?: string;
+    };
+    const job = await enqueuePlanEpisode(novelId, {
+      collisionId: body.collisionId,
+      heroEventId: body.heroEventId,
+    });
     return jsonOk({ job }, 202);
   } catch (e) {
     return jsonError(e instanceof Error ? e.message : String(e), 400);

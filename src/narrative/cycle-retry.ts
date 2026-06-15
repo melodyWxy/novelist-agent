@@ -3,8 +3,8 @@
  *
  * 单体 `narrative-cycle` job 与周期链各阶段 job 共用同一套 resume 语义：
  * - tick 失败 → 从头含 tick
- * - collision 失败 → 若已 tick 则 skipTick
- * - plan / write 失败 → skipTick + 保留碰撞/事件包 ID
+ * - collision 失败（遗留阶段）→ 若已 tick 则 skipTick，续跑从 plan 开始
+ * - plan / write 失败 → skipTick + 保留碰撞/主人公事件/事件包 ID
  */
 import * as narrativeStore from './store.js';
 
@@ -20,6 +20,7 @@ export interface CycleFailureContext {
   ticked: boolean;
   tickDays: number;
   collision?: Collision;
+  heroEventId?: string;
   episodeNumber?: number;
 }
 
@@ -33,11 +34,13 @@ export function buildResumeFromFailure(ctx: CycleFailureContext): CycleResume {
       return {
         skipTick: true,
         collisionId: ctx.collision?.id,
+        heroEventId: ctx.heroEventId,
       };
     case 'write':
       return {
         skipTick: true,
         collisionId: ctx.collision?.id,
+        heroEventId: ctx.heroEventId,
         episodeNumber: ctx.episodeNumber,
       };
     default:
@@ -83,6 +86,7 @@ export function applyResumeToPayload(
   payload: {
     tickDays?: number;
     collisionId?: string;
+    heroEventId?: string;
     episodeNumber?: number;
   },
   resume?: CycleResume
@@ -93,6 +97,9 @@ export function applyResumeToPayload(
   }
   if (resume.collisionId) {
     payload.collisionId = resume.collisionId;
+  }
+  if (resume.heroEventId) {
+    payload.heroEventId = resume.heroEventId;
   }
   if (resume.episodeNumber) {
     payload.episodeNumber = resume.episodeNumber;

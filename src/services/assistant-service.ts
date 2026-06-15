@@ -330,10 +330,15 @@ async function applyAgentAction(
       return { jobId: job.id, jobType: job.type, detail: '已入队世界 Tick' };
     }
     case 'plan_episode': {
-      const collisionId = String(p.collisionId ?? '');
-      if (!collisionId) throw new Error('plan_episode 需要 collisionId');
-      const job = await enqueuePlanEpisode(novelId, collisionId);
-      return { jobId: job.id, jobType: job.type, detail: `已入队规划事件包（碰撞 ${collisionId}）` };
+      const collisionId = typeof p.collisionId === 'string' ? p.collisionId : undefined;
+      const heroEventId = typeof p.heroEventId === 'string' ? p.heroEventId : undefined;
+      const job = await enqueuePlanEpisode(novelId, { collisionId, heroEventId });
+      const detail = collisionId
+        ? `已入队规划事件包（碰撞 ${collisionId}）`
+        : heroEventId
+          ? `已入队规划事件包（主人公行动 ${heroEventId}）`
+          : '已入队按主人公线规划下一章事件包';
+      return { jobId: job.id, jobType: job.type, detail };
     }
     case 'write_episode': {
       const episodeNumber = p.episodeNumber;

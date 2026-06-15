@@ -22,6 +22,30 @@ const ALL_TYPES: CollisionType[] = [
   'relationship',
 ];
 
+const ADMIN_BUREAUCRACY_KEYWORDS = [
+  '贡献点',
+  '公示阁',
+  '积分',
+  '底簿',
+  '巡视',
+  '朱砂',
+  '笔锋',
+  '印泥',
+  '核对',
+  '查验',
+  '登记',
+  '查账',
+  '核验',
+  '远距观察',
+  '偷看',
+];
+
+function isAdminHeavyChapter(m: ChapterMemoryEntry): boolean {
+  const text = `${m.title} ${m.summary} ${m.keyEvents.join(' ')}`;
+  const hits = ADMIN_BUREAUCRACY_KEYWORDS.filter((k) => text.includes(k)).length;
+  return hits >= 2 || (hits >= 1 && /查账|核验|远距|偷看|对照|底簿/.test(text));
+}
+
 export function computePacingRecommendation(
   memories: ChapterMemoryEntry[],
   reviews: ReviewResult[],
@@ -51,24 +75,34 @@ export function computePacingRecommendation(
     recentMemories.length >= 2 &&
     recentMemories.slice(-2).every((m) => m.powerChanges.length > 0);
 
+  const recentAdminCount = recentMemories.filter(isAdminHeavyChapter).length;
+  const adminHeavyStreak =
+    recentMemories.length >= 2 &&
+    recentMemories.slice(-2).every(isAdminHeavyChapter);
+
   let suggestedCollisionTypes: CollisionType[];
   let pacingNote: string;
 
-  if (avgRecentScore != null && avgRecentScore < 70) {
+  if (adminHeavyStreak || recentAdminCount >= 3) {
+    suggestedCollisionTypes = ['relationship', 'location', 'value', 'time'];
+    pacingNote =
+      '近期连续办事/查账/积分类章节过多，本章强制换大格戏：人物交锋、外出任务、公开试炼、同门恩怨或险境，制度细节仅作背景';
+  } else if (avgRecentScore != null && avgRecentScore < 70) {
     suggestedCollisionTypes = ['information', 'relationship', 'location'];
     pacingNote = '近期审稿分偏低，优先选信息差/关系/场景型碰撞，降低混战复杂度';
   } else if (needsRecoveryChapter) {
     suggestedCollisionTypes = ['relationship', 'value', 'information'];
     pacingNote = '连续战力推进，建议休整章：人物关系、价值冲突、情报整理';
   } else if (needsUpgradeChapter) {
-    suggestedCollisionTypes = ['resource', 'information', 'value'];
-    pacingNote = '多章无明确战力/资源收益，优先资源争夺、情报破局、价值冲突类碰撞';
+    suggestedCollisionTypes = ['relationship', 'value', 'location', 'information'];
+    pacingNote =
+      '多章无明确战力/资源收益，优先人物冲突、公开胜负、外出任务或情报破局，勿再堆贡献点/公示阁办事戏';
   } else if (recentPayoffRatio > 0.6) {
     suggestedCollisionTypes = ['time', 'relationship', 'information'];
     pacingNote = '爽点密度较高，穿插探索、关系与伏笔铺垫，避免连续硬升级';
   } else {
-    suggestedCollisionTypes = ['resource', 'location', 'information', 'value'];
-    pacingNote = '维持升级与叙事平衡，资源/地点/信息类碰撞均可';
+    suggestedCollisionTypes = ['relationship', 'location', 'value', 'information'];
+    pacingNote = '维持升级与叙事平衡，人物/场景/价值类碰撞优先，资源类碰撞勿连续';
   }
 
   return {

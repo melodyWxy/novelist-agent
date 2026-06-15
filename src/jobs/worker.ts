@@ -4,7 +4,7 @@
  * ## 周期执行的两种模式（勿混用）
  *
  * 1. **周期链（生产路径）** — UI、`narrative-auto` 调度、`POST /cycle`
- *    - 4 个独立 job：`universe-tick` → `cycle-pick-collision` → `plan-episode` → `write-episode`
+ *    - 4 个独立 job：`universe-tick` →（碰撞增强，默认跳过）→ `plan-episode` → `write-episode`
  *    - `payload.cycleRunId` 关联 `cycle-run.json`；成功时 `completeJob` → `handleCycleJobSuccess` 推进下一阶段
  *    - 失败时 `handleCycleJobFailure` 仅重试当前阶段
  *
@@ -121,15 +121,37 @@ export async function executeJob(job: Job, options: WorkerOptions = {}): Promise
         break;
       }
       case 'plan-episode': {
-        const collisionId = job.payload.collisionId;
-        if (!collisionId) throw new Error('plan-episode 需要 payload.collisionId');
-        const episode = await runtime.planEpisode(job.novelId, collisionId);
+        const { collisionId, heroEventId } = job.payload;
+        const episode = collisionId
+          ? await runtime.planEpisode(job.novelId, collisionId)
+          : await runtime.planEpisodeFromHero(job.novelId, {
+              heroEventId,
+              autoDiscoverCollisions: job.payload.autoDiscoverCollisions !== false,
+              maxCollisions: job.payload.maxCollisions ?? 6,
+            });
+
+        let heroEventTitle: string | undefined;
+        if (episode.heroEventIds[0]) {
+          const hero = await narrativeStore.loadHeroTimeline(job.novelId);
+          heroEventTitle = hero?.events.find((e) => e.id === episode.heroEventIds[0])?.title;
+        }
+        let collisionTitle: string | undefined;
+        if (episode.collisionId) {
+          const collisions = await narrativeStore.loadCollisions(job.novelId);
+          collisionTitle = collisions?.collisions.find((c) => c.id === episode.collisionId)?.title;
+        }
+
+        const sourceLabel = episode.source === 'hero' ? '主人公线' : '碰撞';
         await completeJob(
           job,
-          `事件包 #${episode.episodeNumber}《${episode.title}》已生成`,
+          `事件包 #${episode.episodeNumber}《${episode.title}》已生成（${sourceLabel}）`,
           {
             episodeNumber: episode.episodeNumber,
             episodeTitle: episode.title,
+            heroEventId: episode.heroEventIds[0],
+            heroEventTitle,
+            collisionId: episode.collisionId,
+            collisionTitle,
           }
         );
         break;
@@ -189,15 +211,19 @@ export async function executeJob(job: Job, options: WorkerOptions = {}): Promise
           autoDiscoverCollisions: job.payload.autoDiscoverCollisions !== false,
           maxCollisions: job.payload.maxCollisions ?? 6,
           collisionId: job.payload.collisionId,
+          heroEventId: job.payload.heroEventId,
           episodeNumber: job.payload.episodeNumber,
           targetWords: job.payload.targetWords,
           skipWrite: job.payload.skipWrite,
         });
         const ch = result.chapter;
+        const planPart = result.collision
+          ? `碰撞「${result.collision.title}」→ 事件包#${result.episode.episodeNumber}`
+          : `主人公线 → 事件包#${result.episode.episodeNumber}《${result.episode.title}》`;
         await completeJob(
           job,
           (result.ticked ? `推进至第${result.tickToDay}天 → ` : '') +
-            `碰撞「${result.collision.title}」→ 事件包#${result.episode.episodeNumber}` +
+            planPart +
             (ch ? ` → 第${ch.chapterNumber}章《${ch.title}》${ch.wordCount}字` : '（未写章）')
         );
         break;

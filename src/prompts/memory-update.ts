@@ -28,7 +28,7 @@ export function buildMemoryUpdatePrompt(ctx: MemoryUpdateContext): ChatMessage[]
 {
   "timeline": "当前故事时间线位置",
   "lastChapterSummary": "本章摘要，100-200字",
-  "characters": [{ "name", "role", "traits", "currentStatus", "relationships" }],
+  "characters": [{ "name", "role", "traits", "currentStatus", "relationships": {"角色名":"关系"} }],
   "foreshadowing": [{ "id", "description", "introducedInChapter", "resolved" }],
   "openThreads": ["未解决剧情线"]
 }

@@ -21,7 +21,7 @@ export function buildChapterWritePrompt(ctx: ChapterWriteContext): ChatMessage[]
   const { meta, state, chapterOutline, previousChapterExcerpt, targetWords = 3500 } = ctx;
   const openingWorldGuide =
     chapterOutline.chapterNumber <= 30
-      ? '\n12. 首卷/早期章节要更重视世界观引导：通过主角见闻、交易、盘查、冲突、对话或失败代价，自然讲清地理生活感、阶层制度、势力格局、能力/修行代价、资源链或主角所处位置之一；不要写成百科说明，也不要只推进谜团。'
+      ? '\n12. 首卷/早期章节要更重视世界观引导：通过任务、试炼、冲突、对话或失败代价自然讲清地理生活感、阶层制度、势力格局、能力/修行代价、资源链或主角所处位置之一；不要写成百科说明，也不要连续用办事查账场景代替大格戏。'
       : '';
 
   const characterBlock = state.characters

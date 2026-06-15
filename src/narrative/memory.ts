@@ -67,6 +67,77 @@ export async function appendChapterMemory(
   return index;
 }
 
+/** 供事件包规划使用的近期章节摘要块 */
+export function formatRecentChaptersForPlanner(
+  entries: ChapterMemoryEntry[],
+  limit = 4
+): string {
+  const recent = [...entries]
+    .sort((a, b) => b.chapterNumber - a.chapterNumber)
+    .slice(0, limit);
+  if (recent.length === 0) return '（尚无已写章节）';
+  return recent
+    .map(
+      (e) =>
+        `第${e.chapterNumber}章《${e.title}》（第${e.day}天）：${e.summary}`
+    )
+    .join('\n');
+}
+
+/** 归一化标题用于去重比对 */
+export function normalizeChapterTitle(title: string): string {
+  return title.replace(/\s+/g, '').toLowerCase();
+}
+
+/** 事件包标题是否与近期章节高度重复 */
+export function isDuplicateEpisodeTitle(
+  title: string,
+  recentTitles: string[]
+): boolean {
+  const norm = normalizeChapterTitle(title);
+  if (!norm) return false;
+  return recentTitles.some((t) => {
+    const other = normalizeChapterTitle(t);
+    return other === norm || (other.length > 4 && norm.includes(other)) || (norm.length > 4 && other.includes(norm));
+  });
+}
+
+/** 删除章节后，用剩余记忆条目回写故事状态尾部字段 */
+export function buildStoryStateTailAfterDelete(
+  state: StoryState,
+  memory: ChapterMemoryIndex | null,
+  lastChapterNumber: number
+): Pick<StoryState, 'lastChapterNumber' | 'lastChapterSummary' | 'timeline' | 'foreshadowing'> {
+  const lastEntry =
+    memory?.entries
+      .filter((e) => e.chapterNumber <= lastChapterNumber)
+      .sort((a, b) => b.chapterNumber - a.chapterNumber)[0] ?? null;
+
+  return {
+    lastChapterNumber,
+    lastChapterSummary: lastEntry?.summary ?? (lastChapterNumber === 0 ? '' : state.lastChapterSummary),
+    timeline: lastEntry ? `第${lastEntry.day}天` : lastChapterNumber === 0 ? state.timeline : state.timeline,
+    foreshadowing: state.foreshadowing.filter(
+      (f) => f.introducedInChapter <= lastChapterNumber
+    ),
+  };
+}
+
+export async function removeChapterMemoryEntry(
+  novelId: string,
+  chapterNumber: number
+): Promise<ChapterMemoryIndex | null> {
+  const existing = await narrativeStore.loadChapterMemoryIndex(novelId);
+  if (!existing) return null;
+  const entries = existing.entries.filter((e) => e.chapterNumber !== chapterNumber);
+  const index: ChapterMemoryIndex = {
+    entries,
+    updatedAt: new Date().toISOString(),
+  };
+  await narrativeStore.saveChapterMemoryIndex(novelId, index);
+  return index;
+}
+
 export function getCurrentStoryArc(
   arcs: StoryArcsFile | null,
   chapterNumber: number
@@ -125,7 +196,8 @@ export function buildWorldOnboardingGuidance(
     {
       name: '阶层与制度',
       material: bible.coreConflicts.slice(0, 4).join('；') || '资源分配、身份秩序、制度压力',
-      instruction: '通过排队、盘查、交易、规矩、惩罚或旁人反应讲清这个世界如何运转',
+      instruction:
+        '通过任务成败、长老问话、同门反应或一次公开结果讲清阶层规则；不要整段写成排队盘查、积分细则说明书',
     },
     {
       name: '势力格局',
@@ -148,7 +220,8 @@ export function buildWorldOnboardingGuidance(
           .slice(0, 5)
           .flatMap((f) => f.resources.slice(0, 2).map((r) => `${f.name}:${r}`))
           .join('；') || '资源、物价、垄断、黑市',
-      instruction: '把资源从哪里来、谁控制、普通人付出什么代价讲清楚',
+      instruction:
+        '用一场任务、交易或势力正面冲突体现资源从哪来、谁控制；勿连续用贡献点阁/公示阁查账讲资源链',
     },
     {
       name: '主角位置',

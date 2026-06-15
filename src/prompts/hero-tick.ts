@@ -44,7 +44,10 @@ export function buildHeroTickPrompt(
 要求：
 - 主角是有限视野行动者，knownWorldFacts 不得包含 secret 世界线真相
 - 生成 1～3 个行动节点，day 在 ${fromDay}～${toDay}
-- 可更新 protagonistGoal / crisis 以反映形势变化`,
+- 可更新 protagonistGoal / crisis 以反映形势变化
+- 场景多样性：若近期连续出现贡献点阁/公示阁/积分底簿/巡视偷看类行动，本 tick 必须换类型（外出任务、同门交锋、公开试炼、坊市/秘境、社交宴饮、长老问话、修炼闭关等）
+- 每个节点 title 用 8～20 字概括「要去做的大事」，禁止写成操作手册（如「绕经公示阁核验积分底簿并远距确认巡视路径」）
+- intent 写主角动机与 stakes，不要堆微观观察步骤；同一日内不要安排 3 个都是查账/办事节点`,
     },
     {
       role: 'user',

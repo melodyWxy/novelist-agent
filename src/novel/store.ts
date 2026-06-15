@@ -156,6 +156,39 @@ export async function listChapterNumbers(novelId: string): Promise<number[]> {
   }
 }
 
+export function reviewFilePath(novelId: string, chapterNumber: number): string {
+  const padded = String(chapterNumber).padStart(4, '0');
+  return path.join(getNovelDir(novelId), 'reviews', `${padded}.json`);
+}
+
+export async function deleteChapterFile(
+  novelId: string,
+  chapterNumber: number
+): Promise<boolean> {
+  const filePath = chapterFilePath(novelId, chapterNumber);
+  try {
+    await fs.unlink(filePath);
+    return true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw err;
+  }
+}
+
+export async function deleteReviewFile(
+  novelId: string,
+  chapterNumber: number
+): Promise<boolean> {
+  const filePath = reviewFilePath(novelId, chapterNumber);
+  try {
+    await fs.unlink(filePath);
+    return true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw err;
+  }
+}
+
 export async function saveReview(novelId: string, review: ReviewResult): Promise<void> {
   const parsed = ReviewResultSchema.parse(review);
   const padded = String(review.chapterNumber).padStart(4, '0');

@@ -1,5 +1,9 @@
 import { jsonError, jsonOk, parseBody } from '@/lib/api';
-import { getChapterContent, saveChapterContent } from '@core/services/novel-service';
+import {
+  deleteChapter,
+  getChapterContent,
+  saveChapterContent,
+} from '@core/services/novel-service';
 
 export const runtime = 'nodejs';
 
@@ -35,6 +39,22 @@ export async function PATCH(
 
     const saved = await saveChapterContent(novelId, num, body.content, body.title);
     return jsonOk(saved);
+  } catch (e) {
+    return jsonError(e instanceof Error ? e.message : String(e), 400);
+  }
+}
+
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ novelId: string; chapterNumber: string }> }
+) {
+  try {
+    const { novelId, chapterNumber } = await params;
+    const num = parseInt(chapterNumber, 10);
+    if (Number.isNaN(num)) return jsonError('无效章节号');
+
+    const result = await deleteChapter(novelId, num);
+    return jsonOk(result);
   } catch (e) {
     return jsonError(e instanceof Error ? e.message : String(e), 400);
   }

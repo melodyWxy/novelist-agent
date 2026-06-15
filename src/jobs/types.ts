@@ -24,6 +24,7 @@ export const JobPayloadSchema = z.object({
   targetWords: z.number().int().positive().optional(),
   skipReview: z.boolean().optional(),
   collisionId: z.string().optional(),
+  heroEventId: z.string().optional(),
   episodeNumber: z.number().int().positive().optional(),
   worldEventCount: z.number().int().positive().optional(),
   heroEventCount: z.number().int().positive().optional(),

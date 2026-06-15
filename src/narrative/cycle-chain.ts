@@ -1,5 +1,7 @@
 /**
- * 叙事周期链：tick → 选碰撞 → 事件包 → 写章（各阶段独立 job）
+ * 叙事周期链：tick → 事件包（主人公线）→ 写章（各阶段独立 job）
+ *
+ * collision 阶段保留用于兼容旧链路与 UI 展示，新周期默认跳过，由 plan 阶段按主人公线选点。
  *
  * - `cycle-run.json` 仅存进行中的链；终态写入 `cycle-run-history.json`
  * - 每阶段失败仅重试该阶段（`enqueueStageJob` 复用同一 `CycleRun.id`）
@@ -27,12 +29,17 @@ export interface CycleChainConfig {
   maxCollisions?: number;
   targetWords?: number;
   skipWrite?: boolean;
+  /** 手动指定碰撞时走旧版碰撞规划路径 */
   collisionId?: string;
+  /** 手动指定主人公行动节点 */
+  heroEventId?: string;
   episodeNumber?: number;
 }
 
 export interface CycleJobOutcome {
   tickToDay?: number;
+  heroEventId?: string;
+  heroEventTitle?: string;
   collisionId?: string;
   collisionTitle?: string;
   episodeNumber?: number;
@@ -98,6 +105,9 @@ function buildPayload(run: CycleRun, stage: CycleStageName): JobPayload {
       return {
         ...base,
         collisionId: run.collisionId ?? cfg.collisionId,
+        heroEventId: run.heroEventId ?? cfg.heroEventId,
+        autoDiscoverCollisions: cfg.autoDiscoverCollisions,
+        maxCollisions: cfg.maxCollisions,
       };
     case 'write':
       return {
@@ -111,8 +121,10 @@ function buildPayload(run: CycleRun, stage: CycleStageName): JobPayload {
 /** 断点续跑 / 手动指定参数时，决定从哪一阶段开跑（之前阶段标为 skipped） */
 function resolveStartStage(config: CycleChainConfig, resume?: CycleResume): CycleStageName {
   if (resume?.episodeNumber || config.episodeNumber) return 'write';
-  if (resume?.collisionId || config.collisionId) return 'plan';
-  if (resume?.skipTick || (config.tickDays ?? 1) === 0) return 'collision';
+  if (resume?.collisionId || config.collisionId || resume?.heroEventId || config.heroEventId) {
+    return 'plan';
+  }
+  if (resume?.skipTick || (config.tickDays ?? 1) === 0) return 'plan';
   return 'tick';
 }
 
@@ -165,12 +177,17 @@ export async function startCycleChain(
       targetWords: config.targetWords,
       skipWrite: config.skipWrite === true,
       collisionId: resume?.collisionId ?? config.collisionId,
+      heroEventId: resume?.heroEventId ?? config.heroEventId,
       episodeNumber: resume?.episodeNumber ?? config.episodeNumber,
     },
     stages: emptyStages(),
     collisionId: resume?.collisionId ?? config.collisionId,
+    heroEventId: resume?.heroEventId ?? config.heroEventId,
     episodeNumber: resume?.episodeNumber ?? config.episodeNumber,
   };
+
+  // 主人公线驱动：碰撞选取并入 plan 阶段，此处标记跳过
+  run.stages.collision = { status: 'skipped', finishedAt: now };
 
   if (config.skipWrite) {
     run.stages.write = { status: 'skipped', finishedAt: now };
@@ -273,6 +290,8 @@ export async function handleCycleJobSuccess(
   };
 
   if (outcome.tickToDay !== undefined) run.tickToDay = outcome.tickToDay;
+  if (outcome.heroEventId) run.heroEventId = outcome.heroEventId;
+  if (outcome.heroEventTitle) run.heroEventTitle = outcome.heroEventTitle;
   if (outcome.collisionId) run.collisionId = outcome.collisionId;
   if (outcome.collisionTitle) run.collisionTitle = outcome.collisionTitle;
   if (outcome.episodeNumber) run.episodeNumber = outcome.episodeNumber;
@@ -329,6 +348,7 @@ export async function handleCycleJobFailure(job: Job, error: string): Promise<Jo
     ticked,
     tickDays: run.config.tickDays,
     collision,
+    heroEventId: run.heroEventId ?? run.config.heroEventId,
     episodeNumber: run.episodeNumber,
   });
 
@@ -392,6 +412,7 @@ export async function resumeCycleChain(novelId: string): Promise<{ run: CycleRun
     {
       tickDays: log?.tickDays,
       collisionId: log?.resume?.collisionId ?? log?.collisionId,
+      heroEventId: log?.resume?.heroEventId,
       episodeNumber: log?.resume?.episodeNumber ?? log?.episodeNumber,
     },
     log?.resume

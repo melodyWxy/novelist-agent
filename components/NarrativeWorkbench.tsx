@@ -273,7 +273,7 @@ export function NarrativeWorkbench({
               <QualityMetricsPanel metrics={qualityMetrics} />
               {candidates.length === 0 && (
                 <div className="alert alert-warn">
-                  碰撞池已空，无法「一键产出章节」。请先{' '}
+                  碰撞池为空时仍可按主人公线写章；若要插入碰撞增强，请先{' '}
                   <button
                     type="button"
                     className="btn-link"
@@ -359,7 +359,10 @@ export function NarrativeWorkbench({
                   {cycleLog.runsTotal} 次
                   <br />
                   {cycleLog.skippedTick ? '' : `推进 ${cycleLog.tickDays} 天 → `}
-                  碰撞「{cycleLog.collisionTitle}」→ 事件包 #{cycleLog.episodeNumber}
+                  {cycleLog.collisionTitle
+                    ? `碰撞「${cycleLog.collisionTitle}」→ `
+                    : '主人公线 → '}
+                  事件包 #{cycleLog.episodeNumber}
                   {cycleLog.chapterNumber
                     ? ` → 第${cycleLog.chapterNumber}章《${cycleLog.chapterTitle}》`
                     : ''}
@@ -375,14 +378,8 @@ export function NarrativeWorkbench({
               <div className="actions" style={{ marginBottom: '0.75rem' }}>
                 <button
                   className="btn"
-                  disabled={loading !== null || candidates.length === 0 || Boolean(activeCycleRun)}
-                  title={
-                    activeCycleRun
-                      ? '周期链执行中'
-                      : candidates.length === 0
-                        ? '碰撞池为空，请先发现碰撞'
-                        : undefined
-                  }
+                  disabled={loading !== null || Boolean(activeCycleRun)}
+                  title={activeCycleRun ? '周期链执行中' : undefined}
                   onClick={() =>
                     run('cycle', () =>
                       post(`/api/novels/${novelId}/cycle`, {
@@ -394,10 +391,10 @@ export function NarrativeWorkbench({
                     )
                   }
                 >
-                  {loading === 'cycle' ? '提交中...' : '一键产出章节'}
+                  {loading === 'cycle' ? '提交中...' : '按主人公线写下一章'}
                 </button>
                 <span className="muted" style={{ fontSize: '0.85rem' }}>
-                  4 步 job 链：tick → 选碰撞 → 事件包 → 写章
+                  tick → 主人公线事件包 → 写章（有碰撞则自动插入增强）
                 </span>
               </div>
               <div className="actions">
@@ -453,7 +450,7 @@ export function NarrativeWorkbench({
               <h4 style={{ marginTop: '1.25rem' }}>产出控制</h4>
               <p className="muted">
                 {activeCycleRun
-                  ? '周期链进行中：worker 正在执行 tick → 选碰撞 → 事件包 → 写章'
+                  ? '周期链进行中：worker 正在执行 tick → 主人公线事件包 → 写章'
                   : schedEnabled && schedMode === 'narrative-auto'
                     ? `定时已开启：${schedCron} · 每轮推进 ${tickDays} 天 · 目标 ${targetWords} 字`
                     : pendingJobCount > 0
@@ -964,6 +961,17 @@ export function NarrativeWorkbench({
                   保存主角状态
                 </button>
               </form>
+              <div className="actions" style={{ margin: '0.75rem 0' }}>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  disabled={loading !== null}
+                  onClick={() =>
+                    run('plan-hero', () => post(`/api/novels/${novelId}/episodes`, {}))
+                  }
+                >
+                  {loading === 'plan-hero' ? '提交中...' : '按主人公线规划下一章'}
+                </button>
+              </div>
               <table>
                 <thead>
                   <tr>
@@ -1209,7 +1217,9 @@ export function NarrativeWorkbench({
       {tab === 'collisions' && (
         <div className="card">
           <h3>碰撞工坊</h3>
-          <p className="muted">选择候选碰撞，生成章节事件包后再写正文</p>
+          <p className="muted">
+            碰撞用于增强主人公线章节；也可在此从指定碰撞手动生成事件包
+          </p>
           <button
             className="btn btn-secondary"
             disabled={loading !== null || !hasUniverse}
@@ -1302,7 +1312,25 @@ export function NarrativeWorkbench({
         <div className="card">
           <h3>章节产出</h3>
           {episodes.length === 0 ? (
-            <p className="muted">请先在碰撞工坊生成事件包</p>
+            <>
+              <p className="muted">
+                还没有事件包。默认按主人公线规划下一章；若附近有碰撞，会自动插入为章节增强。
+              </p>
+              <div className="actions">
+                <button
+                  className="btn"
+                  disabled={loading !== null || !hero}
+                  onClick={() =>
+                    run('plan-hero-episodes', () => post(`/api/novels/${novelId}/episodes`, {}))
+                  }
+                >
+                  {loading === 'plan-hero-episodes' ? '提交中...' : '按主人公线规划下一章'}
+                </button>
+                <span className="muted" style={{ fontSize: '0.85rem' }}>
+                  也可在「宇宙概览」一键产出，或在「碰撞工坊」从指定碰撞生成事件包
+                </span>
+              </div>
+            </>
           ) : (
             <table>
               <thead>
